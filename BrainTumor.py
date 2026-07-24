@@ -39,7 +39,7 @@ with open('Model/segmented_model.json', "r") as json_file:
     segmented_model = model_from_json(loaded_model_json)
 json_file.close()    
 segmented_model.load_weights("Model/segmented_weights.h5")
-segmented_model._make_predict_function()
+segmented_model.make_predict_function()
 
 def edgeDetection():
     img = cv2.imread('myimg.png')
