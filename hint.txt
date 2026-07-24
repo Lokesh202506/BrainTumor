@@ -1,0 +1,218 @@
+After installing `xvfb`, **you are not done yet**. `xvfb` only creates a virtual display—it does **not** automatically run your application on it.
+
+Here's the minimum setup to try running your Tkinter application with Xvfb.
+
+## Step 1: Install Xvfb
+
+```bash
+sudo apt update
+sudo apt install xvfb
+```
+
+---
+
+## Step 2: Start the virtual display
+
+```bash
+Xvfb :99 -screen 0 1280x720x24 &
+```
+
+You should get your prompt back. Check that it's running:
+
+```bash
+ps -ef | grep Xvfb
+```
+
+You should see something like:
+
+```text
+Xvfb :99 -screen 0 1280x720x24
+```
+
+---
+
+## Step 3: Set the DISPLAY environment variable
+
+```bash
+export DISPLAY=:99
+```
+
+Verify it:
+
+```bash
+echo $DISPLAY
+```
+
+Expected output:
+
+```text
+:99
+```
+
+---
+
+## Step 4: Activate your virtual environment
+
+```bash
+source .venv/bin/activate
+```
+
+---
+
+## Step 5: Run the project
+
+```bash
+python BrainTumor.py
+```
+
+---
+
+## What will happen?
+
+* ✅ The `TclError: no display name and no $DISPLAY environment variable` should be gone.
+* ❌ However, you still **won't see the Tkinter window**, because Xvfb provides only a **virtual** display. The GUI exists in memory but isn't visible.
+
+If your program only needs to create the window and continue processing, it may run successfully.
+
+If your application expects you to click buttons, browse for images, or interact with the interface, it will appear to "hang" because the invisible window is waiting for user input.
+
+---
+
+## If you still get the same error
+
+Run these commands and share their output:
+
+```bash
+echo $DISPLAY
+```
+
+```bash
+ps -ef | grep Xvfb
+```
+
+```bash
+python BrainTumor.py
+```
+
+---
+
+## If you want to **actually see and interact with the Tkinter window** in GitHub Codespaces
+
+You'll need additional components:
+
+1. **Xvfb** (virtual display)
+2. **XFCE or another desktop environment**
+3. **TigerVNC or x11vnc**
+4. **noVNC** (to access the desktop through your browser)
+
+This creates a remote Linux desktop that you can view and control from your browser. It's considerably more involved than using Xvfb alone.
+
+If your goal is to **use the full GUI inside Codespaces**, I can provide a complete step-by-step guide to set up **XFCE + TigerVNC + noVNC**, so you can interact with the Tkinter application directly in your browser.
+
+
+
+
+
+
+
+
+
+This error means **Xvfb is already running on display `:99`**, so you should **not start another instance**.
+
+Let's check the current state.
+
+### Step 1: Check if Xvfb is running
+
+```bash
+ps -ef | grep Xvfb
+```
+
+If you see something like:
+
+```text
+root      1234     1  0  Xvfb :99 -screen 0 1280x720x24
+```
+
+then Xvfb is already running.
+
+---
+
+### Step 2: Set the DISPLAY variable
+
+```bash
+export DISPLAY=:99
+```
+
+Verify:
+
+```bash
+echo $DISPLAY
+```
+
+It should print:
+
+```text
+:99
+```
+
+---
+
+### Step 3: Run your project
+
+```bash
+python BrainTumor.py
+```
+
+---
+
+## If `ps -ef | grep Xvfb` does **not** show an Xvfb process
+
+Then the previous Xvfb crashed but left a lock file behind.
+
+Check:
+
+```bash
+ls -l /tmp/.X99-lock
+```
+
+If it exists, remove it:
+
+```bash
+rm /tmp/.X99-lock
+```
+
+If that gives "Permission denied", use:
+
+```bash
+sudo rm /tmp/.X99-lock
+```
+
+Then start Xvfb again:
+
+```bash
+Xvfb :99 -screen 0 1280x720x24 &
+export DISPLAY=:99
+python BrainTumor.py
+```
+
+---
+
+## Please run these three commands and paste **all** of their output:
+
+```bash
+echo $DISPLAY
+```
+
+```bash
+ps -ef | grep Xvfb
+```
+
+```bash
+python BrainTumor.py
+```
+
+Those outputs will show whether:
+
+* Xvfb is actually running,
+* your shell is using the correct display,
+* or if the program has moved on to a different issue.
