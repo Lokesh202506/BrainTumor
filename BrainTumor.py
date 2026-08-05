@@ -1,7 +1,6 @@
 
 from tkinter import messagebox
 from tkinter import *
-from tkinter import simpledialog
 import tkinter
 from tkinter import filedialog
 import matplotlib.pyplot as plt
@@ -11,17 +10,11 @@ import os
 import cv2
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score 
-import imutils
-from keras.utils.np_utils import to_categorical
-from keras.layers import  MaxPooling2D
-from keras.layers import Dense, Dropout, Activation, Flatten
-from keras.layers import Convolution2D
-from keras.models import Sequential
-from keras.models import model_from_json
+from tensorflow.keras.models import Sequential, model_from_json
+from tensorflow.keras.layers import Conv2D, MaxPooling2D
+from tensorflow.keras.layers import Dense, Flatten
+from tensorflow.keras.utils import to_categorical
 import pickle
-from sklearn import metrics
-import ftplib
-from tkinter import ttk
 
 main = tkinter.Tk()
 main.title("Identifying Brain Tumor using X-Ray Images") #designing main screen
@@ -33,13 +26,13 @@ X = []
 Y = []
 global classifier
 disease = ['No Tumor Detected','Tumor Detected']
+classifier = None
 
 with open('Model/segmented_model.json', "r") as json_file:
     loaded_model_json = json_file.read()
     segmented_model = model_from_json(loaded_model_json)
 json_file.close()    
 segmented_model.load_weights("Model/segmented_weights.h5")
-segmented_model.make_predict_function()
 
 def edgeDetection():
     img = cv2.imread('myimg.png')
@@ -71,7 +64,8 @@ def tumorSegmentation(filename):
     orig = cv2.resize(orig,(300,300),interpolation = cv2.INTER_CUBIC)
     cv2.imwrite("test1.png",orig)    
     segmented_image = cv2.resize(preds,(300,300),interpolation = cv2.INTER_CUBIC)
-    cv2.imwrite("myimg.png",segmented_image*255)
+    segmented_image = (segmented_image * 255).astype(np.uint8)
+    cv2.imwrite("myimg.png",segmented_image)
     edge_detection = edgeDetection()
     return segmented_image*255, edge_detection
     
@@ -95,7 +89,7 @@ def datasetPreprocessing():
             for i in range(len(directory)):
                 name = directory[i]
                 img = cv2.imread(filename+"/no/"+name,0) #reading images
-                ret2,th2 = cv.threshold(img,0,255,cv.THRESH_BINARY+cv.THRESH_OTSU) #processing and normalization images
+                ret2, th2 = cv2.threshold(img,0,255,cv2.THRESH_BINARY + cv2.THRESH_OTSU) #processing and normalization images
                 img = cv2.resize(img, (128,128)) #resizing images
                 im2arr = np.array(img) #extract features from images
                 im2arr = im2arr.reshape(128,128,1)
@@ -107,7 +101,7 @@ def datasetPreprocessing():
             for i in range(len(directory)):
                 name = directory[i]
                 img = cv2.imread(filename+"/yes/"+name,0)
-                ret2,th2 = cv.threshold(img,0,255,cv.THRESH_BINARY+cv.THRESH_OTSU)
+                ret2,th2 = cv2.threshold(img,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
                 img = cv2.resize(img, (128,128))
                 im2arr = np.array(img)
                 im2arr = im2arr.reshape(128,128,1)
@@ -116,6 +110,7 @@ def datasetPreprocessing():
                 print(filename+"/yes/"+name)
                 
         X = np.asarray(X)
+        X = X.astype(np.float32) / 255.0
         Y = np.asarray(Y)            
         np.save("Model/myimg_data.txt",X)
         np.save("Model/myimg_label.txt",Y)
@@ -132,79 +127,264 @@ def datasetPreprocessing():
 def trainTumorDetectionModel():
     global accuracy
     global classifier
-    
+
     YY = to_categorical(Y)
 
+    # Shuffle dataset
     indices = np.arange(X.shape[0])
     np.random.shuffle(indices)
 
     x_train = X[indices]
     y_train = YY[indices]
 
-    if os.path.exists('Model/model.json'):
-        with open('Model/model.json', "r") as json_file:
-           loaded_model_json = json_file.read()
-           classifier = model_from_json(loaded_model_json)
+    # Split into training and testing sets
+    X_trains, X_tests, y_trains, y_tests = train_test_split(
+        x_train,
+        y_train,
+        test_size=0.2,
+        random_state=0
+    )
 
+    if os.path.exists('Model/model.json'):
+        # Load existing model
+        with open('Model/model.json', "r") as json_file:
+            loaded_model_json = json_file.read()
+
+        classifier = model_from_json(loaded_model_json)
         classifier.load_weights("Model/model_weights.h5")
-        classifier._make_predict_function()           
+
+        classifier.compile(
+            optimizer='adam',
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
+
     else:
-        X_trains, X_tests, y_trains, y_tests = train_test_split(x_train, y_train, test_size = 0.2, random_state = 0)
-        classifier = Sequential() 
-        classifier.add(Convolution2D(32, 3, 3, input_shape = (128, 128, 1), activation = 'relu'))
-        classifier.add(MaxPooling2D(pool_size = (2, 2)))
-        classifier.add(Convolution2D(32, 3, 3, activation = 'relu'))
-        classifier.add(MaxPooling2D(pool_size = (2, 2)))
+        # Build CNN
+        classifier = Sequential()
+
+        classifier.add(
+            Conv2D(
+                filters=32,
+                kernel_size=(3,3),
+                activation='relu',
+                input_shape=(128,128,1)
+            )
+        )
+
+        classifier.add(MaxPooling2D(pool_size=(2,2)))
+
+        classifier.add(
+            Conv2D(
+                filters=32,
+                kernel_size=(3,3),
+                activation='relu'
+            )
+        )
+
+        classifier.add(MaxPooling2D(pool_size=(2,2)))
+
         classifier.add(Flatten())
-        classifier.add(Dense(output_dim = 128, activation = 'relu'))
-        classifier.add(Dense(output_dim = 2, activation = 'softmax'))
+
+        classifier.add(Dense(128, activation='relu'))
+
+        classifier.add(Dense(2, activation='softmax'))
+
         print(classifier.summary())
-        classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-        hist = classifier.fit(x_train, y_train, batch_size=16, epochs=10,validation_split=0.2, shuffle=True, verbose=2)
-        classifier.save_weights('Model/model_weights.h5')            
+
+        classifier.compile(
+            optimizer='adam',
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
+
+        # Train using ONLY training data
+        hist = classifier.fit(
+            X_trains,
+            y_trains,
+            validation_data=(X_tests, y_tests),
+            batch_size=16,
+            epochs=10,
+            shuffle=True,
+            verbose=2
+        )
+
+        # Save model
+        classifier.save_weights('Model/model_weights.h5')
+
         model_json = classifier.to_json()
+
         with open("Model/model.json", "w") as json_file:
             json_file.write(model_json)
-        f = open('Model/history.pckl', 'wb')
-        pickle.dump(hist.history, f)
-        f.close()
-    f = open('Model/history.pckl', 'rb')
-    data = pickle.load(f)
-    f.close()
-    acc = data['accuracy']
-    accuracy = acc[4] * 100
-    text.insert(END,'\n\nCNN Brain Tumor Model Generated. See black console to view layers of CNN\n\n')
-    text.insert(END,"CNN Brain Tumor Prediction Accuracy on Test Images : "+str(accuracy)+"\n")
+
+        # Save training history
+        with open('Model/history.pckl', 'wb') as f:
+            pickle.dump(hist.history, f)
+
+    # Evaluate model on TEST data
+    loss, test_accuracy = classifier.evaluate(
+        X_tests,
+        y_tests,
+        verbose=0
+    )
+
+    accuracy = test_accuracy * 100
+
+    print(f"\nTest Accuracy : {accuracy:.2f}%")
+
+    # Display in GUI
+    text.insert(
+        END,
+        "\n\nCNN Brain Tumor Model Generated. See black console to view layers of CNN\n\n"
+    )
+
+    text.insert(
+        END,
+        "CNN Brain Tumor Prediction Accuracy on Test Images : {:.2f}%\n".format(accuracy)
+    )
+
+    # Optional: show training & validation accuracy
+    if os.path.exists("Model/history.pckl"):
+        with open("Model/history.pckl", "rb") as f:
+            history = pickle.load(f)
+
+        if "accuracy" in history:
+            text.insert(
+                END,
+                "Final Training Accuracy : {:.2f}%\n".format(
+                    history["accuracy"][-1] * 100
+                )
+            )
+
+        if "val_accuracy" in history:
+            text.insert(
+                END,
+                "Final Validation Accuracy : {:.2f}%\n".format(
+                    history["val_accuracy"][-1] * 100
+                )
+            )
        
 
 
 def tumorClassification():
-    filename = filedialog.askopenfilename(initialdir="testImages")
-    img = cv2.imread(filename,0)
-    img = cv2.resize(img, (128,128))
-    im2arr = np.array(img)
-    im2arr = im2arr.reshape(1,128,128,1)
-    XX = np.asarray(im2arr)
-        
-    predicts = classifier.predict(XX)
-    print(predicts)
+    global classifier
+
+    # Check whether model is loaded/trained
+    if classifier is None:
+        messagebox.showerror(
+            "Error",
+            "Please train or load the CNN model first."
+        )
+        return
+
+    # Select image
+    filename = filedialog.askopenfilename(
+        initialdir="testImages",
+        title="Select Brain MRI Image",
+        filetypes=[
+            ("Image Files", "*.jpg *.jpeg *.png *.bmp *.tif *.tiff"),
+            ("All Files", "*.*")
+        ]
+    )
+
+    # User pressed Cancel
+    if filename == "":
+        return
+
+    # Read grayscale image
+    img = cv2.imread(filename, 0)
+
+    # Check image
+    if img is None:
+        messagebox.showerror(
+            "Error",
+            "Unable to read the selected image."
+        )
+        return
+
+    # Resize and normalize
+    img = cv2.resize(img, (128, 128))
+    img = img.astype(np.float32) / 255.0
+
+    XX = img.reshape(1, 128, 128, 1)
+
+    # Predict
+    predicts = classifier.predict(XX, verbose=0)
+
+    print("\nPrediction Probabilities:", predicts)
+
     cls = np.argmax(predicts)
-    print(cls)
+
+    confidence = predicts[0][cls] * 100
+
+    print("Predicted Class :", cls)
+    print("Confidence      : {:.2f}%".format(confidence))
+
+    # Read original image for display
+    display_img = cv2.imread(filename)
+
+    if display_img is None:
+        messagebox.showerror(
+            "Error",
+            "Unable to load original image."
+        )
+        return
+
+    display_img = cv2.resize(display_img, (800, 500))
+
+    cv2.putText(
+        display_img,
+        "Prediction : {}".format(disease[cls]),
+        (10, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 255, 255),
+        2
+    )
+
+    cv2.putText(
+        display_img,
+        "Confidence : {:.2f}%".format(confidence),
+        (10, 65),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 255, 0),
+        2
+    )
+
+    # No Tumor
     if cls == 0:
-        img = cv2.imread(filename)
-        img = cv2.resize(img, (800,500))
-        cv2.putText(img, 'Classification Result : '+disease[cls], (10, 25),  cv2.FONT_HERSHEY_SIMPLEX,0.7, (0, 255, 255), 2)
-        cv2.imshow('Classification Result : '+disease[cls], img)
+
+        cv2.imshow(
+            "Classification Result",
+            display_img
+        )
+
         cv2.waitKey(0)
-    if cls == 1:
+        cv2.destroyAllWindows()
+
+    # Tumor
+    elif cls == 1:
+
         segmented_image, edge_image = tumorSegmentation(filename)
-        img = cv2.imread(filename)
-        img = cv2.resize(img, (800,500))
-        cv2.putText(img, 'Classification Result : '+disease[cls], (10, 25),  cv2.FONT_HERSHEY_SIMPLEX,0.7, (0, 255, 255), 2)
-        cv2.imshow('Classification Result : '+disease[cls], img)
-        cv2.imshow("Tumor Segmented Image",segmented_image)
-        cv2.imshow("Edge Detected Image",edge_image)
+
+        cv2.imshow(
+            "Classification Result",
+            display_img
+        )
+
+        cv2.imshow(
+            "Tumor Segmented Image",
+            segmented_image
+        )
+
+        cv2.imshow(
+            "Edge Detected Image",
+            edge_image
+        )
+
         cv2.waitKey(0)
+        cv2.destroyAllWindows()
         
         
         
@@ -221,8 +401,8 @@ def graph():
     plt.grid(True)
     plt.xlabel('Training Epoch')
     plt.ylabel('Accuracy/Loss')
-    plt.plot(loss, 'ro-', color = 'red')
-    plt.plot(accuracy, 'ro-', color = 'green')
+    plt.plot(loss,color='red')
+    plt.plot(accuracy,color='green')
     plt.legend(['Loss', 'Accuracy'], loc='upper left')
     plt.title('Brain Tumor CNN Model Training Accuracy & Loss Graph')
     plt.show()
